@@ -73,7 +73,7 @@ metadata:
 spec:
   containers:
     - name: ${modalType === 'create' ? inputPodName : modalPodName}
-      image: 'nginx'`
+      image: nginx`
             );
         }
     }, [inputPodName, modalPodName, modalType]);
@@ -106,7 +106,7 @@ spec:
      * sends a PUT request to the backend to try to create a new pod
      * as a workaround for certain pod properties being immutable, 
      * the backend will delete the pod and recreate it using the updated yaml
-    *//*
+    */
     const handleUpdatePod = () => {
         try {
             yaml.load(yamlConfig);
@@ -131,7 +131,6 @@ spec:
             alert('Invalid YAML format. Please correct it and try again.');
         }
     };
-    */
 
     // sends a DELETE request to the backend to try to delete the selected pod
     const handleDeletePod = (podName: string) => {
@@ -242,7 +241,7 @@ spec:
                 overlayClassName="fixed inset-0 bg-gray-900 bg-opacity-50"
             >
                 <h3 className="text-xl font-semibold mb-4 text-gray-900 dark:text-gray-100">
-                    {modalType === 'logs' ? `Logs for ${modalPodName}` : modalType === 'create' ? 'Create Pod' : `Edit ${modalPodName}`}
+                    {modalType === 'logs' ? `Logs for ${modalPodName}` : modalType === 'create' ? 'Create pod' : `Edit pod '${modalPodName}'`}
                 </h3>
                 {modalType === 'logs' ? (
                     <pre className="bg-gray-50 dark:bg-gray-900 p-3 rounded-md max-h-96 overflow-y-auto text-gray-900 dark:text-gray-100">
@@ -266,7 +265,7 @@ spec:
                     {modalType !== 'logs' && (
                         <button
                             className="bg-blue-600 text-white py-2 px-4 rounded-md hover:bg-blue-700 transition-colors"
-                            onClick={modalType === 'create' ? handleCreatePod : undefined}
+                            onClick={modalType === 'create' ? handleCreatePod : modalType === 'edit' ? handleUpdatePod : undefined}
                         >
                             {modalType === 'create' ? 'Create' : 'Update'}
                         </button>

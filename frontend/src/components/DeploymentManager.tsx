@@ -31,7 +31,7 @@ const DeploymentManager: React.FC<{ namespace: string }> = ({ namespace }) => {
   // default yaml file for deployment creation
   useEffect(() => {
     setYamlConfig(
-      `apiVersion: apps/v1
+`apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: ${deploymentName}
@@ -47,7 +47,7 @@ spec:
     spec:
       containers:
       - name: ${deploymentName}
-        image: 'nginx'`);
+        image: nginx`);
   }, [deploymentName]);
 
   // sends a POST request to the backend to try to create a new deployment
