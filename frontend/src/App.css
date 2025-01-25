@@ -36,3 +36,74 @@
     transform: rotate(360deg);
   }
 }
+
+.pod-button {
+  opacity: 0.7;
+  transition: opacity 0.3s ease;
+}
+
+.pod-button:hover {
+  opacity: 1;
+}
+
+.status-circle {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background-color: gray;
+  transition: background-color 0.3s ease;
+}
+
+.status-circle.running {
+  background-color: green;
+}
+
+.status-circle.pending {
+  background-color: gray;
+}
+
+.status-circle.crashed {
+  background-color: red;
+}
+
+.list-group-item {
+  display: flex;
+  align-items: center; 
+  padding: 10px;
+  justify-content: flex-start;
+}
+
+.list-group-item .d-flex {
+  display: flex;
+  align-items: center;
+}
+
+.list-group-item .status-circle {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background-color: gray;
+  margin-right: 8px;
+}
+
+.list-group-item .btn-group {
+  display: flex;
+  gap: 8px;
+  margin-left: auto; 
+}
+
+.list-group-item .btn-group button {
+  margin-left: 8px;
+}
+
+.ml-2 {
+  margin-left: 8px;
+}
+
+.truncated-name {
+  display: inline-block;
+  max-width: 200px; 
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

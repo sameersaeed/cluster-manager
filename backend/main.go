@@ -9,6 +9,8 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
+	"time"
 
 	"github.com/gorilla/handlers"
 	"github.com/gorilla/mux"
@@ -31,7 +33,7 @@ type Cluster struct {
 
 func handleCORS(next http.Handler) http.Handler {
 	return handlers.CORS(
-		handlers.AllowedOrigins([]string{"http://localhost:3000"}), 
+		handlers.AllowedOrigins([]string{"http://localhost:3000"}),
 		handlers.AllowedMethods([]string{"GET", "POST", "PUT", "DELETE", "OPTIONS"}),
 		handlers.AllowedHeaders([]string{"Content-Type", "Authorization"}),
 	)(next)
@@ -59,13 +61,13 @@ func getClusterName() (string, error) {
 }
 
 func getClusterNameHandler(w http.ResponseWriter, r *http.Request) {
-    clusterName, err := getClusterName()
-    if err != nil {
-        http.Error(w, err.Error(), http.StatusInternalServerError)
-        return
-    }
+	clusterName, err := getClusterName()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
 
-    json.NewEncoder(w).Encode(map[string]string{"clusterName": clusterName})
+	json.NewEncoder(w).Encode(map[string]string{"clusterName": clusterName})
 }
 
 func getNodeDetails() ([]corev1.Node, error) {
@@ -98,22 +100,22 @@ func getNodeDetailsHandler(w http.ResponseWriter, r *http.Request) {
 
 	var nodeDetails []map[string]interface{}
 	for _, node := range nodes {
-		status := "Unready" 
+		status := "Unready"
 		for _, condition := range node.Status.Conditions {
 			if condition.Type == corev1.NodeReady {
 				status = string("Ready")
 				break
-			} 
+			}
 		}
 
 		nodeDetails = append(nodeDetails, map[string]interface{}{
-			"name":		node.Name,
-			"cpu":      node.Status.Capacity["cpu"],
-			"memory":   node.Status.Capacity["memory"],
-			"status":   status, 
+			"name":   node.Name,
+			"cpu":    node.Status.Capacity["cpu"],
+			"memory": node.Status.Capacity["memory"],
+			"status": status,
 		})
 
-	json.NewEncoder(w).Encode(map[string][]map[string]interface{}{"nodes": nodeDetails})
+		json.NewEncoder(w).Encode(map[string][]map[string]interface{}{"nodes": nodeDetails})
 	}
 }
 
@@ -234,6 +236,11 @@ func createDeploymentHandler(w http.ResponseWriter, r *http.Request) {
 
 	err = createDeployment(namespace, &deployment)
 	if err != nil {
+		if strings.Contains(err.Error(), "already exists") {
+			http.Error(w, fmt.Sprintf("Deployment with name '%s' already exists in namespace '%s'", deployment.Name, namespace), http.StatusConflict)
+			return
+		}
+
 		http.Error(w, fmt.Sprintf("Error creating deployment: %v", err), http.StatusInternalServerError)
 		return
 	}
@@ -358,7 +365,7 @@ func createPodHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var pod corev1.Pod 
+	var pod corev1.Pod
 	err = yaml.UnmarshalStrict([]byte(podYaml), &pod)
 	if err != nil {
 		log.Fatalf("Error unmarshalling YAML: %s", err.Error())
@@ -366,9 +373,15 @@ func createPodHandler(w http.ResponseWriter, r *http.Request) {
 
 	err = createPod(namespace, &pod)
 	if err != nil {
-		log.Fatalf("Error creating pod: %s", err.Error())
+		if strings.Contains(err.Error(), "already exists") {
+			http.Error(w, fmt.Sprintf("Pod with name '%s' already exists in namespace '%s'", pod.Name, namespace), http.StatusConflict)
+			return
+		}
+
+		http.Error(w, fmt.Sprintf("Error creating pod: %v", err), http.StatusInternalServerError)
+		return
 	}
-	
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{
 		"status":  "success",
@@ -376,28 +389,10 @@ func createPodHandler(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func editPodYaml(namespace string, pod *corev1.Pod) error {
-	kubeconfig := filepath.Join(homedir.HomeDir(), ".kube", "config")
-	config, err := clientcmd.BuildConfigFromFlags("", kubeconfig)
-	if err != nil {
-		return fmt.Errorf("failed to build kubeconfig: %v", err)
-	}
-
-	clientset, err := kubernetes.NewForConfig(config)
-	if err != nil {
-		return fmt.Errorf("failed to create Kubernetes client: %v", err)
-	}
-
-	podClient := clientset.CoreV1().Pods(namespace)
-	//podClient.Delete(context.TODO(), pod.Name, metav1.DeleteOptions{GracePeriodSeconds: nil})
-	//_, err = podClient.Update(context.Background(), pod, metav1.CreateOptions{})
-	_, err = podClient.Update(context.Background(), pod, metav1.UpdateOptions{})
-	return err
-}
-
 func editPodYamlHandler(w http.ResponseWriter, r *http.Request) {
 	var vars = mux.Vars(r)
 	namespace := vars["namespace"]
+	podName := vars["podName"]
 
 	podYaml, err := io.ReadAll(r.Body)
 	if err != nil {
@@ -412,10 +407,20 @@ func editPodYamlHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err = editPodYaml(namespace, &pod)
+	// certain pod properties are immutable
+	// to get around this we first delete the pod
+	err = deletePod(namespace, podName)
 	if err != nil {
-		http.Error(w, fmt.Sprintf("Failed to update pod: %v", err), http.StatusInternalServerError)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
+	}
+	json.NewEncoder(w).Encode(map[string]string{"status": "success", "deletedPod": podName})
+	time.Sleep(2 * time.Second)
+
+	// then we recreate the pod with the provided yaml
+	err = createPod(namespace, &pod)
+	if err != nil {
+		log.Fatalf("Error updating pod: %s", err.Error())
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -510,7 +515,7 @@ func getPodYamlHandler(w http.ResponseWriter, r *http.Request) {
 	config, err := clientcmd.BuildConfigFromFlags("", kubeconfig)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("Failed to build config from path: %v", kubeconfig), http.StatusInternalServerError)
-		return 
+		return
 	}
 
 	clientset, err := kubernetes.NewForConfig(config)
@@ -527,7 +532,7 @@ func getPodYamlHandler(w http.ResponseWriter, r *http.Request) {
 
 	yamlData, err := yaml.Marshal(pod)
 	if err != nil {
-		http.Error(w, fmt.Sprintf("Failed to marshal pod to YAML: %v", err), http.StatusInternalServerError)
+		http.Error(w, fmt.Sprintf("Failed to marshal pod spec to YAML: %v", err), http.StatusInternalServerError)
 		return
 	}
 
@@ -536,18 +541,17 @@ func getPodYamlHandler(w http.ResponseWriter, r *http.Request) {
 	w.Write(yamlData)
 }
 
-
 func main() {
 	router := mux.NewRouter()
 	router.HandleFunc("/api/cluster-name", getClusterNameHandler).Methods("GET")
 	router.HandleFunc("/api/node-details", getNodeDetailsHandler).Methods("GET")
 	router.HandleFunc("/api/namespaces", getNamespacesHandler).Methods("GET")
 
-	router.HandleFunc("/api/deployments/{namespace}", getDeploymentsHandler).Methods("GET") 
-	router.HandleFunc("/api/deployment/{namespace}/{deploymentName}", createDeploymentHandler).Methods("POST")  
-	router.HandleFunc("/api/deployment/{namespace}/{deploymentName}", deleteDeploymentHandler).Methods("DELETE")  
+	router.HandleFunc("/api/deployments/{namespace}", getDeploymentsHandler).Methods("GET")
+	router.HandleFunc("/api/deployment/{namespace}/{deploymentName}", createDeploymentHandler).Methods("POST")
+	router.HandleFunc("/api/deployment/{namespace}/{deploymentName}", deleteDeploymentHandler).Methods("DELETE")
 
-	router.HandleFunc("/api/pods/{namespace}", getPodsHandler).Methods("GET") 
+	router.HandleFunc("/api/pods/{namespace}", getPodsHandler).Methods("GET")
 	router.HandleFunc("/api/pod/{namespace}/{podName}", createPodHandler).Methods("POST")
 	router.HandleFunc("/api/pod/{namespace}/{podName}", editPodYamlHandler).Methods("PUT")
 	router.HandleFunc("/api/pod/{namespace}/{podName}", deletePodHandler).Methods("DELETE")

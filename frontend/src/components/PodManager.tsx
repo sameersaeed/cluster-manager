@@ -10,58 +10,91 @@ interface Pod {
 
 const PodManager: React.FC<{ namespace: string }> = ({ namespace }) => {
     const [pods, setPods] = useState<Pod[]>([]);
-    const [podName, setPodName] = useState<string>('');
-    const [logs, setLogs] = useState<string>('');
+    const [modalPodName, setModalPodName] = useState<string>('');
+    const [inputPodName, setInputPodName] = useState<string>('');
+    const [podLogs, setPodLogs] = useState<string>('');
     const [isModalOpen, setIsModalOpen] = useState<boolean>(false);
+    const [modalType, setModalType] = useState<'logs' | 'create' | 'edit' | null>(null);
     const [yamlConfig, setYamlConfig] = useState<string>('');
-    const [isEditing, setIsEditing] = useState<boolean>(false);
+    const apiUrl = process.env.REACT_APP_API_URL;
 
+    // poll for updates in pod list every 10 seconds
     useEffect(() => {
-        if (namespace) {
-            axios.get(`http://localhost:8080/api/pods/${namespace}`)
-                .then(response => setPods(response.data.pods || []))
-                .catch(error => console.error("Error fetching pods:", error));
-        }
-    }, [namespace]);
+        let pollingInterval: NodeJS.Timeout;
 
-    const openModal = () => {
+        const fetchPods = async () => {
+            try {
+                const response = await axios.get(`${apiUrl}/api/pods/${namespace}`);
+                const updatedPodsList = response.data.pods || [];
+
+                if (JSON.stringify(updatedPodsList) !== JSON.stringify(pods)) {
+                    setPods(updatedPodsList);
+                }
+            } catch (error) {
+                console.error("Error fetching pods:", error);
+            }
+        };
+
+        if (namespace) {
+            fetchPods();
+            pollingInterval = setInterval(fetchPods, 10000);
+        }
+
+        return () => clearInterval(pollingInterval);
+    }, [apiUrl, namespace, pods]);
+
+    // different modal information is displayed based on the button pressed
+    const openModal = (type: 'logs' | 'create' | 'edit', podName: string) => {
+        setModalPodName(podName);
+        setModalType(type);
         setIsModalOpen(true);
-        setIsEditing(false);
+        if (type === 'logs') {
+            handleGetPodLogs(podName);
+        } else if (type === 'edit') {
+            handleGetPodYaml(podName);
+        }
     };
 
     const closeModal = () => {
         setIsModalOpen(false);
+        setModalType(null);
     };
 
+    // default yaml file for pod creation
+    // the edit modal currently uses this default yaml as well, 
+    // rather than the actual yaml being used by the deployed pod
     useEffect(() => {
-        setYamlConfig(
-            `apiVersion: v1
+        if (modalType !== 'logs') {
+            setYamlConfig(
+                `apiVersion: v1
 kind: Pod
 metadata:
-  name: ${podName}
+  name: ${modalType === 'create' ? inputPodName : modalPodName}
 spec:
   containers:
-    - name: ${podName}
-      image: 'nginx'`);
-    }, [podName]);
+    - name: ${modalType === 'create' ? inputPodName : modalPodName}
+      image: 'nginx'`
+            );
+        }
+    }, [inputPodName, modalPodName, modalType]);
 
+    // sends a POST request to the backend to try to create a new pod
     const handleCreatePod = () => {
         try {
             yaml.load(yamlConfig);
 
-            axios.post(`http://localhost:8080/api/pod/${namespace}/${podName}`, yamlConfig, {
+            axios.post(`${apiUrl}/api/pod/${namespace}/${inputPodName}`, yamlConfig, {
                 headers: {
                     'Content-Type': 'application/x-yaml'
-                }
-            })
+                }})
                 .then(response => {
-                    alert(`A new pod called ${podName} has successfully been created in namespace ${namespace}!`);
-                    setPods([...pods, { name: podName, status: 'Pending' }]);
+                    alert(`A new pod called '${inputPodName}' has successfully been created in namespace '${namespace}'!`);
+                    setPods([...pods, { name: inputPodName, status: 'Pending' }]);
                     closeModal();
                 })
                 .catch(error => {
-                    console.error(`Error creating pod "${podName}":`, error);
-                    alert(`Failed to create pod: ${error.message}`);
+                    console.error(`Error creating pod '${inputPodName}' in namespace '${namespace}':`, error);
+                    alert(`Failed to create pod '${inputPodName}': ${error.response.data}`);
                 });
         } catch (error) {
             console.error('Error parsing YAML:', error);
@@ -69,106 +102,177 @@ spec:
         }
     };
 
+    /** 
+     * sends a PUT request to the backend to try to create a new pod
+     * as a workaround for certain pod properties being immutable, 
+     * the backend will delete the pod and recreate it using the updated yaml
+    *//*
     const handleUpdatePod = () => {
         try {
             yaml.load(yamlConfig);
-            axios.put(`http://localhost:8080/api/pod/${namespace}/${podName}`, yamlConfig, {
+            axios.put(`${apiUrl}/api/pod/${namespace}/${modalPodName}`, yamlConfig, {
                 headers: {
                     'Content-Type': 'application/x-yaml',
                 }
             })
                 .then(response => {
-                    alert(`Pod ${podName} has been updated successfully!`);
-                    axios.get(`http://localhost:8080/api/pod/${namespace}/${podName}/yaml`)
-                        .then(() => {
-                            setTimeout(() => {
-                                axios.get(`http://localhost:8080/api/pods/${namespace}`)
-                                .then(response => setPods(response.data.pods))
-                                closeModal();
-                            }, 2000);
-                        })
+                    alert(`Pod '${modalPodName}' has been updated successfully in namespace '${namespace}'!`);
+                    axios.get(`${apiUrl}/api/pods/${namespace}`)
+                        .then(response => setPods(response.data.pods || []))
+                        .catch(error => console.error(`Error fetching updated pod list for namespace ${namespace}:`, error));
+                    closeModal();
                 })
                 .catch(error => {
-                    console.error(`Error updating pod "${podName}":`, error);
-                    alert(`Failed to update pod: ${error.message}`);
+                    console.error(`Error updating pod '${modalPodName}' in namespace '${namespace}':`, error);
+                    alert(`Failed to update pod '${inputPodName}': ${error.response.data}`);
                 });
         } catch (error) {
             console.error('Error parsing YAML:', error);
             alert('Invalid YAML format. Please correct it and try again.');
         }
     };
+    */
 
+    // sends a DELETE request to the backend to try to delete the selected pod
     const handleDeletePod = (podName: string) => {
-        axios.delete(`http://localhost:8080/api/pod/${namespace}/${podName}`)
+        axios.delete(`${apiUrl}/api/pod/${namespace}/${podName}`)
             .then(response => {
-                alert(`Pod ${podName} has successfully been deleted in namespace ${namespace}!`);
+                alert(`Pod '${podName}' has successfully been deleted in namespace '${namespace}'!`);
                 setPods(pods.filter(pod => pod.name !== podName));
             })
-            .catch(error => console.error(`Error deleting pod "${podName}":`, error));
+            .catch(error => console.error(`Error deleting pod '${podName}':`, error.response.data));
     };
 
+    // retrieves the selected pod's logs by sending a GET request to the backend
     const handleGetPodLogs = (podName: string) => {
-        axios.get(`http://localhost:8080/api/pod/${namespace}/${podName}/logs`)
-            .then(response => setLogs(response.data.logs))
-            .catch(error => console.error(`Error fetching pod logs for pod ${podName} in namespace ${namespace}:`, error));
+        axios.get(`${apiUrl}/api/pod/${namespace}/${podName}/logs`)
+            .then(response => {
+                setPodLogs(response.data.logs)
+            })
+            .catch(error => console.error(`Error fetching pod logs for pod '${podName}' in namespace '${namespace}':`, error));
     };
 
+    // this is currently unused as kubernetes adds extra properties to pod yamls 
+    // as a result, pressing the edit button will just show a basic default yaml for now
+    // with the pod name filled in, not the full yaml with all the additional properties
     const handleGetPodYaml = (podName: string) => {
-        axios.get(`http://localhost:8080/api/pod/${namespace}/${podName}/yaml`)
+        axios.get(`${apiUrl}/api/pod/${namespace}/${podName}/yaml`)
             .then(response => {
-                setYamlConfig(response.data.yaml || '');
-                setPodName(podName);
-                setIsModalOpen(true);
-                setIsEditing(true);
+                if (response.data.yaml !== undefined) setYamlConfig(response.data);
             })
-            .catch(error => console.error("Error fetching pod YAML:", error));
+            .catch(error => console.error(`Error fetching YAML for pod '${namespace}':`, error.response.data));
     };
 
     return (
-        <div>
-            <h2>Manage Pods</h2>
+        <div className="bg-white dark:bg-gray-800 shadow-lg rounded-lg p-6 hover:scale-105 transition-transform">
+            <h3 className="text-lg font-semibold mb-4">Manage Pods</h3>
             <input
                 type="text"
-                value={podName}
-                onChange={(e) => setPodName(e.target.value)}
+                value={inputPodName}
+                onChange={(e) => setInputPodName(e.target.value)}
                 placeholder="Pod name"
+                className="w-full mb-3 p-2 border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 text-gray-900 dark:text-gray-200 rounded-md focus:ring focus:ring-blue-500"
             />
-            <button onClick={openModal}>Create new pod</button>
+            <button
+                onClick={() => openModal('create', '')}
+                className={`py-2 px-4 rounded-md transition-colors ${inputPodName.length === 0
+                        ? 'bg-gray-400 text-white cursor-not-allowed'
+                        : 'bg-blue-600 text-white hover:bg-blue-700'
+                    }`}
+                disabled={inputPodName.length === 0}
+            >
+                Create new pod
+            </button>
 
-            <h3>Pods</h3>
-            <ul>
+            <h3 className="text-lg font-semibold mt-6 mb-2">Existing Pods</h3>
+            <ul className="space-y-2">
                 {pods.length === 0 ? (
-                    <li>No pods found.</li>
+                    <li className="flex items-center justify-between bg-gray-100 dark:bg-gray-700 p-3 rounded-md shadow">
+                        No pods found.
+                    </li>
                 ) : (
-                    pods.map((pod) => (
-                        <li key={pod.name}>
-                            {pod.name} - Status: {pod.status}
-                            <button onClick={() => handleGetPodYaml(pod.name)}>Edit</button>
-                            <button onClick={() => handleDeletePod(pod.name)}>Delete</button>
-                            <button onClick={() => handleGetPodLogs(pod.name)}>Pod logs</button>
+                    pods.map((pod, index) => (
+                        <li
+                            key={index}
+                            className="flex items-center justify-between bg-gray-100 dark:bg-gray-700 p-3 rounded-md shadow"
+                        >
+                            <span className="text-sm font-medium text-gray-800 dark:text-gray-200 truncated-name flex-1">
+                                {pod.name}
+                                <span
+                                    className={`inline-block w-3 h-3 rounded-full ml-2 cursor-pointer ${
+                                        pod.status === "Running"
+                                            ? "bg-green-500"
+                                            : pod.status === "Pending"
+                                            ? "bg-gray-500"
+                                            : "bg-red-500"
+                                    }`}
+                                    title={pod.status}  
+                                ></span>
+                            </span>
+                            <div className="flex space-x-2 flex-shrink-0">
+                                <button
+                                    onClick={() => openModal('logs', pod.name)}
+                                    className="bg-gray-500 text-white py-1 px-3 rounded-md hover:bg-gray-600 transition-colors"
+                                >
+                                    Logs
+                                </button>
+                                <button
+                                    onClick={() => openModal('edit', pod.name)}
+                                    className="bg-blue-500 text-white py-1 px-3 rounded-md hover:bg-blue-600 transition-colors"
+                                >
+                                    Edit
+                                </button>
+                                <button
+                                    onClick={() => handleDeletePod(pod.name)}
+                                    className="bg-red-500 text-white py-1 px-3 rounded-md hover:bg-red-600 transition-colors"
+                                >
+                                    Delete
+                                </button>
+                            </div>
                         </li>
                     ))
                 )}
             </ul>
 
-            <Modal isOpen={isModalOpen} onRequestClose={closeModal}>
-                <h3>{isEditing ? `Update YAML for ${podName}` : 'Create new pod'}</h3>
-                {isEditing && <h4>Note: Editing a pod will cause it to be deleted and re-created</h4>}
-                <textarea
-                    value={yamlConfig}
-                    onChange={(e) => setYamlConfig(e.target.value)}
-                    rows={10}
-                    cols={50}
-                />
-                <div>
-                    <button onClick={isEditing ? handleUpdatePod : handleCreatePod}>
-                        {isEditing ? 'Update pod' : 'Create pod'}
+            <Modal
+                isOpen={isModalOpen}
+                onRequestClose={closeModal}
+                contentLabel="Pod Modal"
+                className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-xl"
+                overlayClassName="fixed inset-0 bg-gray-900 bg-opacity-50"
+            >
+                <h3 className="text-xl font-semibold mb-4 text-gray-900 dark:text-gray-100">
+                    {modalType === 'logs' ? `Logs for ${modalPodName}` : modalType === 'create' ? 'Create Pod' : `Edit ${modalPodName}`}
+                </h3>
+                {modalType === 'logs' ? (
+                    <pre className="bg-gray-50 dark:bg-gray-900 p-3 rounded-md max-h-96 overflow-y-auto text-gray-900 dark:text-gray-100">
+                        {podLogs || 'Fetching logs...'}
+                    </pre>
+                ) : (
+                    <textarea
+                        value={yamlConfig}
+                        onChange={(e) => setYamlConfig(e.target.value)}
+                        rows={10}
+                        className="w-full p-3 bg-gray-50 dark:bg-gray-700 text-gray-900 dark:text-gray-200 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
+                    />
+                )}
+                <div className="mt-4 flex justify-between">
+                    <button
+                        className="bg-gray-500 text-white py-2 px-4 rounded-md hover:bg-gray-600 transition-colors"
+                        onClick={closeModal}
+                    >
+                        Cancel
                     </button>
-                    <button onClick={closeModal}>Cancel</button>
+                    {modalType !== 'logs' && (
+                        <button
+                            className="bg-blue-600 text-white py-2 px-4 rounded-md hover:bg-blue-700 transition-colors"
+                            onClick={modalType === 'create' ? handleCreatePod : undefined}
+                        >
+                            {modalType === 'create' ? 'Create' : 'Update'}
+                        </button>
+                    )}
                 </div>
             </Modal>
-
-            {logs && <div><h4>Pod logs ({podName})</h4><pre>{logs}</pre></div>}
         </div>
     );
 };
