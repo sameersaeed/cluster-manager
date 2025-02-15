@@ -2,12 +2,16 @@ import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import Modal from 'react-modal';
 import yaml from 'js-yaml';
+import LlamaAssistant from './LlamaAssistant';
+import toastr from '../toastr.js'; 
+import '..//toastr.css'; 
 
 const DeploymentManager: React.FC<{ namespace: string }> = ({ namespace }) => {
   const [deployments, setDeployments] = useState<string[]>([]);
   const [deploymentName, setDeploymentName] = useState<string>('');
   const [yamlConfig, setYamlConfig] = useState<string>('');
   const [isModalOpen, setIsModalOpen] = useState<boolean>(false);
+
   const apiUrl = process.env.REACT_APP_API_URL;
 
   useEffect(() => {
@@ -16,7 +20,7 @@ const DeploymentManager: React.FC<{ namespace: string }> = ({ namespace }) => {
         .then(response => {
           setDeployments(response.data.deployments || []);
         })
-        .catch(error => console.error(`Error fetching deployments from "${namespace}":`, error.response.data));
+        .catch(error => console.error(`Error fetching deployments from "${namespace}":`, error));
     }
   }, [apiUrl, namespace]);
 
@@ -31,7 +35,7 @@ const DeploymentManager: React.FC<{ namespace: string }> = ({ namespace }) => {
   // default yaml file for deployment creation
   useEffect(() => {
     setYamlConfig(
-`apiVersion: apps/v1
+      `apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: ${deploymentName}
@@ -59,17 +63,17 @@ spec:
         headers: { 'Content-Type': 'application/x-yaml' }
       })
         .then(response => {
-          alert(`A new deployment called ${deploymentName} has successfully been created in namespace ${namespace}!`);
+          toastr.success(`A new deployment called ${deploymentName} has successfully been created in namespace ${namespace}!`);
           setDeployments([...deployments, deploymentName]);
           closeModal();
         })
         .catch(error => {
-          console.error(`Error creating deployment "${deploymentName}":`, error.response.data);
-          alert(`Failed to create deployment: ${error.response.data}`);
+          console.error(`Error creating deployment "${deploymentName}":`, error);
+          toastr.error(`Failed to create deployment: ${error}`);
         });
     } catch (error) {
       console.error('Error parsing YAML:', error);
-      alert('Invalid YAML format. Please correct it and try again.');
+      toastr.error('Invalid YAML format. Please correct it and try again.');
     }
   };
 
@@ -77,12 +81,11 @@ spec:
   const handleDeleteDeployment = (deploymentName: string) => {
     axios.delete(`${apiUrl}/api/deployment/${namespace}/${deploymentName}`)
       .then(response => {
-        alert(`Deployment ${deploymentName} has successfully been deleted in namespace ${namespace}!`);
+        toastr.success(`Deployment ${deploymentName} has successfully been deleted in namespace ${namespace}!`);
         setDeployments(deployments.filter(dep => dep !== deploymentName));
       })
-      .catch(error => console.error(`Error deleting deployment "${deploymentName}":`, error.response.data));
+      .catch(error => console.error(`Error deleting deployment "${deploymentName}":`, error));
   };
-
 
   return (
     <div className="bg-white dark:bg-gray-800 shadow-lg rounded-lg p-6 hover:scale-105 transition-transform">
@@ -97,8 +100,8 @@ spec:
       <button
         onClick={openModal}
         className={`py-2 px-4 rounded-md transition-colors ${deploymentName.length === 0
-            ? 'bg-gray-400 text-white cursor-not-allowed'
-            : 'bg-blue-600 text-white hover:bg-blue-700'
+          ? 'bg-gray-400 text-white cursor-not-allowed'
+          : 'bg-blue-600 text-white hover:bg-blue-700'
           }`}
         disabled={deploymentName.length === 0}
       >
@@ -134,7 +137,7 @@ spec:
       <Modal
         isOpen={isModalOpen}
         onRequestClose={closeModal}
-        className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-xl"
+        className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-xl w-1/2 fixed top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2"
         overlayClassName="fixed inset-0 bg-gray-900 bg-opacity-50"
       >
         <h3 className="text-xl font-semibold mb-4 text-gray-900 dark:text-gray-100">
@@ -143,10 +146,10 @@ spec:
         <textarea
           value={yamlConfig}
           onChange={(e) => setYamlConfig(e.target.value)}
-          rows={10}
-          cols={50}
+          rows={25}
           className="w-full p-3 bg-gray-50 dark:bg-gray-700 text-gray-900 dark:text-gray-200 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
         />
+        <LlamaAssistant yamlType="deployment" setYamlConfig={setYamlConfig} />
         <div className="mt-4 flex justify-between">
           <button
             className="bg-gray-500 text-white py-2 px-4 rounded-md hover:bg-gray-600 transition-colors"

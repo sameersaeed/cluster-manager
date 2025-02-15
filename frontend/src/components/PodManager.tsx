@@ -1,7 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
-import Modal from 'react-modal';
 import yaml from 'js-yaml';
+import Modal from 'react-modal';
+import LlamaAssistant from './LlamaAssistant';
+import toastr from '../toastr.js'; 
+import '../toastr.css'; 
 
 interface Pod {
     name: string;
@@ -88,17 +91,18 @@ spec:
                     'Content-Type': 'application/x-yaml'
                 }})
                 .then(response => {
-                    alert(`A new pod called '${inputPodName}' has successfully been created in namespace '${namespace}'!`);
+                    
+                    toastr.success(`A new pod called '${inputPodName}' has successfully been created in namespace '${namespace}'!`);
                     setPods([...pods, { name: inputPodName, status: 'Pending' }]);
                     closeModal();
                 })
                 .catch(error => {
                     console.error(`Error creating pod '${inputPodName}' in namespace '${namespace}':`, error);
-                    alert(`Failed to create pod '${inputPodName}': ${error.response.data}`);
+                    toastr.error(`Failed to create pod '${inputPodName}': ${error}`);
                 });
         } catch (error) {
             console.error('Error parsing YAML:', error);
-            alert('Invalid YAML format. Please correct it and try again.');
+            toastr.error('Invalid YAML format. Please correct it and try again.');
         }
     };
 
@@ -116,7 +120,7 @@ spec:
                 }
             })
                 .then(response => {
-                    alert(`Pod '${modalPodName}' has been updated successfully in namespace '${namespace}'!`);
+                    toastr.success(`Pod '${modalPodName}' has been updated successfully in namespace '${namespace}'!`);
                     axios.get(`${apiUrl}/api/pods/${namespace}`)
                         .then(response => setPods(response.data.pods || []))
                         .catch(error => console.error(`Error fetching updated pod list for namespace ${namespace}:`, error));
@@ -124,11 +128,11 @@ spec:
                 })
                 .catch(error => {
                     console.error(`Error updating pod '${modalPodName}' in namespace '${namespace}':`, error);
-                    alert(`Failed to update pod '${inputPodName}': ${error.response.data}`);
+                    toastr.error(`Failed to update pod '${inputPodName}': ${error}`);
                 });
         } catch (error) {
             console.error('Error parsing YAML:', error);
-            alert('Invalid YAML format. Please correct it and try again.');
+            toastr.error('Invalid YAML format. Please correct it and try again.');
         }
     };
 
@@ -136,10 +140,10 @@ spec:
     const handleDeletePod = (podName: string) => {
         axios.delete(`${apiUrl}/api/pod/${namespace}/${podName}`)
             .then(response => {
-                alert(`Pod '${podName}' has successfully been deleted in namespace '${namespace}'!`);
+                toastr.success(`Pod '${podName}' has successfully been deleted in namespace '${namespace}'!`);
                 setPods(pods.filter(pod => pod.name !== podName));
             })
-            .catch(error => console.error(`Error deleting pod '${podName}':`, error.response.data));
+            .catch(error => console.error(`Error deleting pod '${podName}':`, error));
     };
 
     // retrieves the selected pod's logs by sending a GET request to the backend
@@ -159,7 +163,7 @@ spec:
             .then(response => {
                 if (response.data.yaml !== undefined) setYamlConfig(response.data);
             })
-            .catch(error => console.error(`Error fetching YAML for pod '${namespace}':`, error.response.data));
+            .catch(error => console.error(`Error fetching YAML for pod '${namespace}':`, error));
     };
 
     return (
@@ -237,7 +241,7 @@ spec:
                 isOpen={isModalOpen}
                 onRequestClose={closeModal}
                 contentLabel="Pod Modal"
-                className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-xl"
+                className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-xl w-1/2 fixed top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2"
                 overlayClassName="fixed inset-0 bg-gray-900 bg-opacity-50"
             >
                 <h3 className="text-xl font-semibold mb-4 text-gray-900 dark:text-gray-100">
@@ -248,12 +252,15 @@ spec:
                         {podLogs || 'Fetching logs...'}
                     </pre>
                 ) : (
-                    <textarea
-                        value={yamlConfig}
-                        onChange={(e) => setYamlConfig(e.target.value)}
-                        rows={10}
-                        className="w-full p-3 bg-gray-50 dark:bg-gray-700 text-gray-900 dark:text-gray-200 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
-                    />
+                    <>
+                        <textarea
+                            value={yamlConfig}
+                            onChange={(e) => setYamlConfig(e.target.value)}
+                            rows={25}
+                            className="w-full p-3 bg-gray-50 dark:bg-gray-700 text-gray-900 dark:text-gray-200 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
+                        />
+                        <LlamaAssistant yamlType="pod" setYamlConfig={setYamlConfig} />
+                    </>
                 )}
                 <div className="mt-4 flex justify-between">
                     <button

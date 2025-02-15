@@ -1,10 +1,12 @@
 package main
 
 import (
-	"net/http"
-
 	corshandlers "github.com/gorilla/handlers"
 	"github.com/gorilla/mux"
+	"github.com/joho/godotenv"
+	"log"
+	"net/http"
+	"os"
 
 	handlers "github.com/sameersaeed/cluster-manager/handlers"
 )
@@ -27,6 +29,18 @@ func handleCORS(next http.Handler) http.Handler {
 func main() {
 	router := mux.NewRouter()
 
+	// try loading from .env file
+	err := godotenv.Load()
+	if err != nil {
+		log.Println("couldn't find any .env file, using system env vars")
+	}
+
+	// if .env not found, try loading from system env vars
+	apiKey := os.Getenv("GROQ_API_KEY")
+	if apiKey == "" {
+		log.Fatal("missing GROQ_API_KEY value")
+	}
+
 	router.HandleFunc("/api/cluster-name", handlers.GetClusterNameHandler).Methods("GET")
 	router.HandleFunc("/api/node-details", handlers.GetNodeDetailsHandler).Methods("GET")
 	router.HandleFunc("/api/namespaces", handlers.GetNamespacesHandler).Methods("GET")
@@ -41,6 +55,8 @@ func main() {
 	router.HandleFunc("/api/pod/{namespace}/{podName}", handlers.DeletePodHandler).Methods("DELETE")
 	router.HandleFunc("/api/pod/{namespace}/{podName}/yaml", handlers.GetPodYamlHandler).Methods("GET")
 	router.HandleFunc("/api/pod/{namespace}/{podName}/logs", handlers.GetPodLogsHandler).Methods("GET")
+
+	router.HandleFunc("/api/groq", handlers.SendGroqQueryHandler).Methods("POST")
 
 	http.ListenAndServe(":8080", handleCORS(router))
 }

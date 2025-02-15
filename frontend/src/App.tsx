@@ -62,10 +62,10 @@ const App: React.FC = () => {
           {namespace && (
             <div className="grid gap-6 lg:grid-cols-2 xl:grid-cols-2">
               <div className="bg-white dark:bg-gray-800 shadow-lg rounded-lg p-6 transition-transform hover:scale-105">
-                <DeploymentManager namespace={namespace} />
+                <DeploymentManager namespace={namespace}/>
               </div>
               <div className="bg-white dark:bg-gray-800 shadow-lg rounded-lg p-6 transition-transform hover:scale-105">
-                <PodManager namespace={namespace} />
+                <PodManager namespace={namespace}/>
               </div>
             </div>
           )}
